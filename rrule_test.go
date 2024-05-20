@@ -1,5 +1,6 @@
 // 2017-2022, Teambition. All rights reserved.
 
+
 package rrule
 
 import (
@@ -3883,6 +3884,49 @@ func TestWeekdayGetters(t *testing.T) {
 	}
 }
 
+func TestRuleChangeDTStartTimezoneRespected(t *testing.T) {
+	/*
+		https://golang.org/pkg/time/#LoadLocation
+
+		"The time zone database needed by LoadLocation may not be present on all systems, especially non-Unix systems.
+		LoadLocation looks in the directory or uncompressed zip file named by the ZONEINFO environment variable,
+		if any, then looks in known installation locations on Unix systems, and finally looks in
+		$GOROOT/lib/time/zoneinfo.zip."
+	*/
+	loc, err := time.LoadLocation("CET")
+	if err != nil {
+		t.Fatal("expected", nil, "got", err)
+	}
+
+	rule, err := NewRRule(
+		ROption{
+			Freq:    DAILY,
+			Count:   10,
+			Wkst:    MO,
+			Dtstart: time.Date(2019, 3, 6, 1, 1, 1, 0, loc),
+		},
+	)
+	if err != nil {
+		t.Fatal("expected", nil, "got", err)
+	}
+	rule.DTStart(time.Date(2019, 3, 6, 0, 0, 0, 0, time.UTC))
+
+	events := rule.All()
+	if len(events) != 10 {
+		t.Fatal("expected", 10, "got", len(events))
+	}
+
+	for _, e := range events {
+		if e.Location().String() != "UTC" {
+			t.Fatal("expected", "UTC", "got", e.Location().String())
+		}
+		h, m, s := e.Clock()
+		if (h + m + s) != 0 {
+			t.Fatal("expected", "0", "got", h, m, s)
+		}
+	}
+}
+
 func TestDST_HourlyDSTStart(t *testing.T) {
 	sydLoc, _ := time.LoadLocation("Australia/Sydney")
 	r, _ := NewRRule(ROption{Freq: HOURLY, Interval: 1, Count: 3,
@@ -3948,49 +3992,25 @@ func TestDST_HourlyDSTEnd(t *testing.T) {
 		}
 	}
 }
-func TestRuleChangeDTStartTimezoneRespected(t *testing.T) {
-	/*
-		https://golang.org/pkg/time/#LoadLocation
 
-		"The time zone database needed by LoadLocation may not be present on all systems, especially non-Unix systems.
-		LoadLocation looks in the directory or uncompressed zip file named by the ZONEINFO environment variable,
-		if any, then looks in known installation locations on Unix systems, and finally looks in
-		$GOROOT/lib/time/zoneinfo.zip."
-	*/
-	loc, err := time.LoadLocation("CET")
-	if err != nil {
-		t.Fatal("expected", nil, "got", err)
+
+func TestDailyDST(t *testing.T) {
+	sydney, _ := time.LoadLocation("Australia/Sydney")
+	r, _ := NewRRule(ROption{
+		Freq:    DAILY,
+		Count:   3,
+		Dtstart: time.Date(2023, 4, 1, 9, 0, 0, 0, sydney),
+	})
+	want := []time.Time{
+		time.Date(2023, 4, 1, 9, 0, 0, 0, sydney),
+		time.Date(2023, 4, 2, 9, 0, 0, 0, sydney),
+		time.Date(2023, 4, 3, 9, 0, 0, 0, sydney),
 	}
-
-	rule, err := NewRRule(
-		ROption{
-			Freq:    DAILY,
-			Count:   10,
-			Wkst:    MO,
-			Dtstart: time.Date(2019, 3, 6, 1, 1, 1, 0, loc),
-		},
-	)
-	if err != nil {
-		t.Fatal("expected", nil, "got", err)
-	}
-	rule.DTStart(time.Date(2019, 3, 6, 0, 0, 0, 0, time.UTC))
-
-	events := rule.All()
-	if len(events) != 10 {
-		t.Fatal("expected", 10, "got", len(events))
-	}
-
-	for _, e := range events {
-		if e.Location().String() != "UTC" {
-			t.Fatal("expected", "UTC", "got", e.Location().String())
-		}
-		h, m, s := e.Clock()
-		if (h + m + s) != 0 {
-			t.Fatal("expected", "0", "got", h, m, s)
-		}
+	value := r.All()
+	if !timesEqual(value, want) {
+		t.Errorf("get %v, want %v", value, want)
 	}
 }
-
 func BenchmarkIterator(b *testing.B) {
 	type testCase struct {
 		Name   string
